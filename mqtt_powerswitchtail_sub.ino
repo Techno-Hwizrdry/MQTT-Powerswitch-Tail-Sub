@@ -30,6 +30,9 @@ const char* MQTT_TOPIC = "";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+void connect_to_mqtt_server();
+void callback(char* topic, byte* payload, unsigned int length);
+
 void setup()
 {
   Serial.begin(BAUD_SPEED);
@@ -38,32 +41,53 @@ void setup()
   pinMode(POWERSWITCHTAIL_PIN, OUTPUT);  // prepare GPIO2
 
   //  Connect to the wifi network.
+  Serial.println();
+  Serial.print("Connecting to WiFi network ");
+  Serial.print(NETWORK_SSID);
+  Serial.print("..");
   WiFi.begin(NETWORK_SSID, NETWORK_PASSWORD);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.println("Connecting to WiFi...");
+    Serial.print(".");
   }
   
-  Serial.println("Connected to the WiFi network");
+  Serial.println("connected.");
 
   // Connect to the MQTT server.
   client.setServer(MQTT_SERVER, MQTT_PORT);
   client.setCallback(callback);
 
-  while (!client.connected()) {
-    Serial.println("Connecting to MQTT...");
+  connect_to_mqtt_server();
+}
+
+void loop()
+{
+  if (! client.connected()) {
+    connect_to_mqtt_server();
+  }
+
+  client.loop();
+}
+
+void connect_to_mqtt_server()
+{
+  Serial.print("Connecting to MQTT server ");
+  Serial.print(MQTT_SERVER);
+  Serial.print("..");
+  
+  while (! client.connected()) {
+    Serial.print(".");
  
     if (client.connect(MQTT_CLIENT_NAME, MQTT_USER, MQTT_PASSWORD )) {
-      Serial.println("connected");  
+      Serial.println("connected.");  
     } else {
       Serial.print("failed with state ");
-      Serial.print(client.state());
+      Serial.println(client.state());
       delay(2000);
- 
     }
   }
- 
+
   client.publish(MQTT_TOPIC, "Hello from ESP8266 Powerswitch Tail");
   client.subscribe(MQTT_TOPIC);
 }
@@ -83,9 +107,4 @@ void callback(char* topic, byte* payload, unsigned int length)
       Serial.println("Powerswitch tail OFF");
     }
   }
-}
-
-void loop()
-{
-  client.loop();
 }
