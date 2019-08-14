@@ -13,21 +13,25 @@
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include "secrets.h"
+
+#define ENABLE_SSL
 
 const int POWERSWITCHTAIL_PIN = D1;
 const int BAUD_SPEED = 115200;
 
-const char* NETWORK_SSID = "";
-const char* NETWORK_PASSWORD = "";
-
-const char* MQTT_SERVER = "";
-const int MQTT_PORT = 1883;
-const char* MQTT_USER = "";
-const char* MQTT_PASSWORD = "";
 const char* MQTT_CLIENT_NAME = "WemosD1MiniPowerswitchTailClient";
-const char* MQTT_TOPIC = "";
 
-WiFiClient espClient;
+#ifdef ENABLE_SSL
+  const int MQTT_PORT = 8883;
+
+  X509List caCertX509(caCert);
+  WiFiClientSecure espClient;
+#else
+  const int MQTT_PORT = 1883;
+  WiFiClient espClient;
+#endif
+
 PubSubClient client(espClient);
 
 void connect_to_mqtt_server();
@@ -54,8 +58,15 @@ void setup()
   
   Serial.println("connected.");
 
+#ifdef ENABLE_SSL
+  // Configure secure client connection.
+  espClient.setTrustAnchors(&caCertX509);         // Load CA cert into trust store.
+  espClient.allowSelfSignedCerts();               // Enable self-signed cert support.
+  espClient.setFingerprint(mqttCertFingerprint);  // Load SHA1 mqtt broker cert fingerprint for connection validation.
+#endif
+
   // Connect to the MQTT server.
-  client.setServer(MQTT_SERVER, MQTT_PORT);
+  client.setServer(MQTT_SERVER_IP, MQTT_PORT);
   client.setCallback(callback);
 
   connect_to_mqtt_server();
@@ -73,7 +84,7 @@ void loop()
 void connect_to_mqtt_server()
 {
   Serial.print("Connecting to MQTT server ");
-  Serial.print(MQTT_SERVER);
+  Serial.print(MQTT_SERVER_IP);
   Serial.print("..");
   
   while (! client.connected()) {
