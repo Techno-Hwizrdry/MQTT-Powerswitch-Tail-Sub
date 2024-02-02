@@ -31,3 +31,11 @@ In secrets.h, your `mqttCertFingerprint[]` should look something like this:
 `const uint8_t mqttCertFingerprint[] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF,0x11,0x22,0x33,0x44,0x55,0x1A,0x69,0x42,0x00,0x80,0x08,0x55,0xB0,0x0B};`
 
 If you do not want to use TLS encrpytion, simply comment out `"#define ENABLE_SSL"` in mqtt_powerswitchtail_pub.ino.
+
+## Connecting to your WiFi network
+This project uses the WiFiManager.h library.  Once your esp8266 board has been successfully flashed, and either hasn't been connected to wifi before or to a network it recognizes, it will act as a WiFi access point (AP).  The AP serves a web interface that will allow you to add your WiFi network's credentials.  Once added, the AP turns off and the esp8266 will join the WiFi network you specified.  To do this:
+
+1. Connect to the `PowerSwitchTail-AP` access point.
+2. In a web browser, go to `192.168.4.1`
+3. Tap the Configure WiFi button.
+4. Add your WiFi network's credentials.
