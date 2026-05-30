@@ -33,8 +33,28 @@ const int BAUD_SPEED = 115200;
 
 PubSubClient client(espClient);
 
+unsigned long lastMsgTime = 0;
+const unsigned long KEEPALIVE_INTERVAL = 60000;  // 60 seconds
+
 void connect_to_mqtt_server();
 void callback(char* topic, byte* payload, unsigned int length);
+
+void sync_time()
+{
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.print("Waiting for NTP time sync");
+  
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+
+  Serial.println();
+  Serial.print("Time synced: ");
+  Serial.println(ctime(&now));
+}
 
 void setup()
 {
@@ -45,6 +65,8 @@ void setup()
 
   WiFiManager wifiManager;
   wifiManager.autoConnect("PowerSwitchTail-AP");
+
+  //sync_time();
 
 #ifdef ENABLE_SSL
   // Configure secure client connection.
@@ -65,8 +87,15 @@ void loop()
   if (!client.connected()) {
     connect_to_mqtt_server();
   }
-
   client.loop();
+
+  // Publish a heartbeat periodically to keep the connection alive
+  // and detect silent failures
+  unsigned long now = millis();
+  if (now - lastMsgTime > KEEPALIVE_INTERVAL) {
+    lastMsgTime = now;
+    client.publish("powerswitch/heartbeat", "alive");
+  }
 }
 
 void connect_to_mqtt_server()
