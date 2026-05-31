@@ -1,12 +1,12 @@
 # MQTT-Powerswitch-Tail-Sub 
-A MQTT subscriber to turn off and on a Powerswitch Tail 2, using a the WeMos D1 mini ESP8266 board.
+A MQTT subscriber to turn off and on a Powerswitch Tail 2, using a the XIAO ESP32-C6 ESP8266 board.
 
 ## Description
 This arduino sketch will switch a Powerswitch Tail 2 either on or off, via MQTT subscription.
 
-The code was created for the Wemos D1 Mini, but can be modified to run on other ESP8266 boards.
-After uploading the code to the Wemos D1 Mini, wire the D1 pin to "+ in" on the Powerswitch Tail.
-Then wire GND on the Wemos D1 mini to "- in" on the Powerswitch Tail.
+The code was created for the [Seeed Studio XIAO ESP32-C6](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C6-p-5884.html), but can be modified to run on other ESP32 boards.
+After uploading the code to the XIAO ESP32-C6, wire the D1 pin to "+ in" on the Powerswitch Tail.
+Then wire GND on the XIAO ESP32-C6 to "- in" on the Powerswitch Tail.
 
 ## Prerequistes
 This code was written and tested with VScode and PlatformIO.  VScode was also used to upload the sketch to the board.
