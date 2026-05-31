@@ -11,10 +11,9 @@ Then wire GND on the XIAO ESP32-C6 to "- in" on the Powerswitch Tail.
 ## Prerequistes
 The steps to set up the tool chain is:
 
-0. [Download](https://www.python.org/downloads/) and install Python 3.10.11 or higher.
-1. [Download](https://www.arduino.cc/en/software/) and install the Arduino IDE.
-2. In Arduino IDE, bring up the Board Manager (Cntrl + Shift + B) and search for `esp32`.  Then click the Install button next to `esp32 by Espressif Systems`.
-3. Bring up the Library manager (Cntrl + Shift + I) and search for `WiFiManager by tzapu`.  Then install that library.
+0. [Download](https://www.arduino.cc/en/software/) and install the Arduino IDE.
+1. In Arduino IDE, bring up the Board Manager (Cntrl + Shift + B) and search for `esp32`.  Then click the Install button next to `esp32 by Espressif Systems`.
+2. Bring up the Library manager (Cntrl + Shift + I) and search for `WiFiManager by tzapu`.  Then install that library.
 
 ## secrets.h
 Before you compile and upload to your board, you will need to:
