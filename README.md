@@ -21,10 +21,6 @@ Before you compile and upload to your board, you will need to:
 1. Copy `src/secrets.h_example` to `src/secrets.h`
 2. Enter the details of your MQTT server in secrets.h.
 
-In secrets.h, your `mqttCertFingerprint[]` should look something like this:
-
-`const uint8_t mqttCertFingerprint[] = {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF,0x11,0x22,0x33,0x44,0x55,0x1A,0x69,0x42,0x00,0x80,0x08,0x55,0xB0,0x0B};`
-
 If you do not want to use TLS encrpytion, simply comment out `"#define ENABLE_SSL"` in mqtt_powerswitchtail_pub.ino.
 
 ## Connecting to your WiFi network
