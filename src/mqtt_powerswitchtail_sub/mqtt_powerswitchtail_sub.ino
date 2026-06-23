@@ -143,23 +143,24 @@ void connect_to_mqtt_server()
     }
   }
 
-  client.publish(MQTT_TOPIC, "Hello from XIAO ESP32-C6 PowerSwitch Tail");
+  client.publish(
+    "debug/powerswitchtail",
+    "Hello from XIAO ESP32-C6 PowerSwitch Tail"
+  );
   client.subscribe(MQTT_TOPIC);
 }
 
-void callback(char* topic, byte* payload, unsigned int length)
+void callback(char* topic, byte* payload, unsigned int k)
 {
-  const int ON = 1;
+  if (strcmp(topic, MQTT_TOPIC) != 0 || k == 0) return;
 
-  int lampState = *payload - 48;  // ASCII '1'/'0' -> integer 1/0
+  char cmd = (char)payload[0];
 
-  if (strcmp(topic, MQTT_TOPIC) == 0) {
-    if (lampState == ON) {
-      digitalWrite(POWERSWITCHTAIL_PIN, HIGH);
-      Serial.println("Powerswitch tail ON");
-    } else {
-      digitalWrite(POWERSWITCHTAIL_PIN, LOW);
-      Serial.println("Powerswitch tail OFF");
-    }
+  if (cmd == '1') {
+    digitalWrite(POWERSWITCHTAIL_PIN, HIGH);
+    Serial.println("Powerswitch tail ON");
+  } else if (cmd == '0') {
+    digitalWrite(POWERSWITCHTAIL_PIN, LOW);
+    Serial.println("Powerswitch tail OFF");
   }
 }
