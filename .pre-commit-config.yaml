@@ -1,5 +1,8 @@
 repos:
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
+  - repo: local
     hooks:
-      - id: gitleaks
+      - id: detect-secrets
+        name: detect-secrets (secret scan)
+        language: python
+        additional_dependencies: [detect-secrets==1.5.0]
+        entry: python -m detect_secrets.pre_commit_hook

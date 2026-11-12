@@ -15,67 +15,56 @@
  *       Tools -> Board -> select "XIAO_ESP32C6".
  *   - WiFiManager (tzapu) latest release (older versions break on core 3.x).
  *   - PubSubClient.
+ *   - MQTTManager (Techno-Hwizrdry/mqtt-manager, dev branch).
  *
- * What changed from the ESP8266 version (and why):
- *   - TLS is mbedTLS here, not BearSSL. setTrustAnchors(), setFingerprint(),
- *     and allowSelfSignedCerts() do NOT exist on ESP32. The broker's
- *     self-signed certificate is pinned with setCACert() instead (a self-signed
- *     cert is its own CA, so this validates it correctly and stays secure).
- *   - setCACert() validation checks the certificate's notBefore/notAfter dates,
- *     so the system clock MUST be set via NTP before the TLS connect.
- *     sync_time() is therefore now ENABLED (it was commented out before).
- *   - WPA3 + PMF are handled natively by the ESP32-C6 radio; no code needed.
- *     You can set your router to use WPA3 / PMF Required and this still connects.
- *   - The XIAO ESP32-C6 uses its onboard ceramic antenna by default; no antenna
- *     code is required. See the optional external-antenna block in setup().
+ * WiFi and MQTT settings are entered through a captive portal, not in source
+ * code.  On first boot, connect to the "PowerSwitchTail-AP" access point,
+ * browse to 192.168.4.1, and fill in your WiFi network and the "MQTT Broker"
+ * section on the same page.  The MQTT settings are stored in flash by the
+ * MQTTManager library.
  *
- * secrets.h must define: caCert (the broker's certificate, as a PEM C-string),
- *   MQTT_SERVER_IP, MQTT_CLIENT_NAME, MQTT_USER, MQTT_PASSWORD, MQTT_TOPIC.
+ * To change the MQTT settings later, hold the BOOT button for 3 seconds while
+ * the board is running.  The stored MQTT settings are erased and the
+ * "PowerSwitchTail-MQTT" access point starts; connect to it and browse to
+ * 192.168.4.1.
+ *
+ * TLS: the broker's (self-signed) certificate is pinned with the CA in
+ * broker_ca.h, so the password is only sent to your real broker.
  */
 
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
+#include <time.h>
 #include <PubSubClient.h>
 #include <WiFiManager.h>
-#include "secrets.h"
-
-#define ENABLE_SSL
+#include "MQTTManager.h"
+#include "MQTTWiFiManager.h"
+#include "broker_ca.h"
 
 const int POWERSWITCHTAIL_PIN = D1;   // top "D1" pad on the XIAO (a safe GPIO).
+const int RESET_BUTTON_PIN    = 9;    // BOOT button on the XIAO ESP32-C6.
 const int BAUD_SPEED = 115200;
 
-#ifdef ENABLE_SSL
-  const int MQTT_PORT = 8883;
-  WiFiClientSecure espClient;
-#else
-  const int MQTT_PORT = 1883;
-  WiFiClient espClient;
-#endif
+const char* WIFI_AP_NAME = "PowerSwitchTail-AP";
+const char* MQTT_AP_NAME = "PowerSwitchTail-MQTT";
 
-PubSubClient client(espClient);
+const unsigned long RESET_HOLD_MS = 3000;  // Hold BOOT this long to re-enter MQTT setup.
 
 unsigned long lastMsgTime = 0;
 const unsigned long KEEPALIVE_INTERVAL = 60000;  // 60 seconds
 
-void connect_to_mqtt_server();
+unsigned long buttonPressedAt = 0;
+bool          buttonHeld      = false;
+
+WiFiManager wifiManager;
+MQTTManager mqttManager(MQTT_AP_NAME);
+MQTTWiFiManagerFields mqttFields(mqttManager, 8883, true);  // defaults: port 8883, TLS on
+
+void onMqttConnect();
+void onMqttPortalStart();
 void callback(char* topic, byte* payload, unsigned int length);
 
-void sync_time()
-{
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  Serial.print("Waiting for NTP time sync");
-
-  time_t now = time(nullptr);
-  while (now < 8 * 3600 * 2) {
-    delay(500);
-    Serial.print(".");
-    now = time(nullptr);
-  }
-
-  Serial.println();
-  Serial.print("Time synced: ");
-  Serial.println(ctime(&now));
-}
+// The topic entered in the portal (empty until a config is saved).
+const char* mqttTopic() { return mqttManager.config().topic; }
 
 void setup()
 {
@@ -84,6 +73,7 @@ void setup()
 
   pinMode(POWERSWITCHTAIL_PIN, OUTPUT);
   digitalWrite(POWERSWITCHTAIL_PIN, LOW);  // lamp starts off
+  pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
   /* --- Optional: external U.FL antenna ---
    * The onboard ceramic antenna is the default and needs no code.
@@ -96,63 +86,104 @@ void setup()
    * digitalWrite(WIFI_ANT_CONFIG, HIGH);   // GPIO14: select external antenna
    */
 
-  WiFiManager wifiManager;
-  wifiManager.autoConnect("PowerSwitchTail-AP");
+  // WiFi and MQTT are configured on one portal page. If WiFi can't be joined
+  // (e.g. the router is still booting after a power cut), give up after
+  // 3 minutes and reboot to try again instead of waiting in the portal forever.
+  mqttFields.addTo(wifiManager);
+  wifiManager.setConnectRetries(3);
+  wifiManager.setConfigPortalTimeout(180);
+  if (!wifiManager.autoConnect(WIFI_AP_NAME)) {
+    ESP.restart();
+  }
 
-#ifdef ENABLE_SSL
-  sync_time();                  // REQUIRED before TLS (cert validity is checked)
-  espClient.setCACert(caCert);  // pin the broker's (self-signed) certificate
-#endif
+  // Connect to the MQTT server, using the settings saved from the portal.
+  // If none are saved yet, MQTTManager starts its own setup portal.
+  mqttManager.setCACert(caCert);
+  mqttManager.onConnect(onMqttConnect);
+  mqttManager.onMessage(callback);
+  mqttManager.onPortalStart(onMqttPortalStart);
+  mqttManager.autoConnect();
 
-  client.setServer(MQTT_SERVER_IP, MQTT_PORT);
-  client.setCallback(callback);
-
-  connect_to_mqtt_server();
+  const MQTTConfig& cfg = mqttManager.config();
+  Serial.printf("MQTT broker %s:%u, TLS %s, user \"%s\", topic \"%s\"\n",
+                cfg.host, cfg.port, cfg.tlsEnabled ? "on" : "off", cfg.username, cfg.topic);
 }
 
 void loop()
 {
-  if (!client.connected()) {
-    connect_to_mqtt_server();
-  }
-  client.loop();
+  // Keeps the MQTT connection alive, reconnects every 5 s if it drops,
+  // and runs the setup portal when it is active.
+  mqttManager.loop();
 
   // Periodic heartbeat to keep the connection alive and surface silent failures.
+  PubSubClient& client = mqttManager.getClient();
   unsigned long now = millis();
-  if (now - lastMsgTime > KEEPALIVE_INTERVAL) {
+
+  // While the broker is unreachable, report why every 5 s.
+  // PubSubClient states: -4 timeout, -2 connect/TLS failed, 4 bad user/password, 5 not authorized.
+  static unsigned long lastStatus = 0;
+  if (mqttManager.config().host[0] != '\0' && !client.connected() && now - lastStatus > 5000) {
+    lastStatus = now;
+    Serial.printf("MQTT not connected, state %d, clock %ld\n", client.state(), (long)time(nullptr));
+  }
+
+  // Typing "reset" in the Serial Monitor does the same as holding BOOT.
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "reset") {
+      Serial.println("Erasing MQTT settings and starting the setup portal.");
+      mqttManager.resetSettings();
+    }
+  }
+  if (client.connected() && now - lastMsgTime > KEEPALIVE_INTERVAL) {
     lastMsgTime = now;
     client.publish("powerswitch/heartbeat", "alive");
   }
+
+  // Hold BOOT to erase the MQTT settings and open the MQTT setup portal.
+  if (digitalRead(RESET_BUTTON_PIN) == LOW) {
+    if (!buttonHeld) {
+      buttonHeld      = true;
+      buttonPressedAt = now;
+    } else if (buttonPressedAt != 0 && now - buttonPressedAt >= RESET_HOLD_MS) {
+      Serial.println("BOOT held, erasing MQTT settings and starting the setup portal.");
+      buttonPressedAt = 0;  // fire once per hold
+        mqttManager.resetSettings();
+    }
+  } else {
+    buttonHeld = false;
+  }
 }
 
-void connect_to_mqtt_server()
+// Called by MQTTManager every time it connects (or reconnects) to the broker.
+void onMqttConnect()
 {
-  Serial.print("Connecting to MQTT server ");
-  Serial.print(MQTT_SERVER_IP);
-  Serial.print("..");
-
-  while (!client.connected()) {
-    Serial.print(".");
-
-    if (client.connect(MQTT_CLIENT_NAME, MQTT_USER, MQTT_PASSWORD)) {
-      Serial.println("connected.");
-    } else {
-      Serial.print("failed with state ");
-      Serial.println(client.state());  // -2 = TLS/connect fail; check cert/time
-      delay(2000);
-    }
-  }
+  Serial.println("Connected to MQTT server.");
+  PubSubClient& client = mqttManager.getClient();
 
   client.publish(
     "debug/powerswitchtail",
     "Hello from XIAO ESP32-C6 PowerSwitch Tail"
   );
-  client.subscribe(MQTT_TOPIC);
+
+  if (mqttTopic()[0] != '\0') {
+    client.subscribe(mqttTopic());
+  } else {
+    Serial.println("No MQTT topic is set. Hold BOOT 3 s to enter one.");
+  }
+}
+
+void onMqttPortalStart()
+{
+  Serial.print("MQTT setup portal started. Connect to the ");
+  Serial.print(MQTT_AP_NAME);
+  Serial.println(" access point and browse to 192.168.4.1");
 }
 
 void callback(char* topic, byte* payload, unsigned int k)
 {
-  if (strcmp(topic, MQTT_TOPIC) != 0 || k == 0) return;
+  if (strcmp(topic, mqttTopic()) != 0 || k == 0) return;
 
   char cmd = (char)payload[0];
 
